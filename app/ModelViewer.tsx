@@ -16,25 +16,25 @@ const SCENE1_COLORS: Record<string, string> = {
 // Keys ordered most-specific first so startsWith matching doesn't short-circuit
 const SCENE3_COLORS: Record<string, string> = {
   "manufacturing unit": "#c8956c",  // B1 silo (orange-brown)
-  "central office":     "#8fad76",  // B3 office (green)
-  "dispatch zone":      "#b08ac8",  // B4 dispatch (purple)
-  "heavy assembly":     "#c8b46c",  // B6 heavy assembly (golden)
-  warehouse:            "#6c9eb0",  // B2 warehouse (blue-grey)
-  "Material__1":        "#7a8a7a",  // ground plane (grey)
-  trees2:               "#2d6a2d",  // forest terrain (dark green) — before "trees"
-  trees:                "#4a8a4a",  // individual tree instances (green)
-  Guideline:            "#c8c860",  // guideline floor paths (yellow-green)
-  "Blk#2":              "#16a085",  // AMR-50 body (teal) — before "Blk"
-  "White#2":            "#f5c842",  // AMR-10 accent (yellow) — before "White"
-  "White#3":            "#1abc9c",  // AMR-50 accent (teal) — before "White"
-  "grey#2":             "#117a65",  // AMR-50 detail (dark teal) — before "grey"
-  Blk:                  "#2980b9",  // APT-20 body (blue)
-  White:                "#4ab0d9",  // APT-20 accent (light blue)
-  Black:                "#f39c12",  // AMR-10 body (orange)
-  grey:                 "#888888",  // AMR-10 detail (grey)
-  L11:                  "#c87a7a",  // L11 elements (red-pink)
-  amr10:                "#8a9a8a",  // AMR-10 disc base (grey)
-  B1:                   "#c8956c",  // B1 building shell fallback (orange-brown)
+  "central office": "#8fad76",  // B3 office (green)
+  "dispatch zone": "#b08ac8",  // B4 dispatch (purple)
+  "heavy assembly": "#c8b46c",  // B6 heavy assembly (golden)
+  warehouse: "#6c9eb0",  // B2 warehouse (blue-grey)
+  "Material__1": "#7a8a7a",  // ground plane (grey)
+  trees2: "#2d6a2d",  // forest terrain (dark green) — before "trees"
+  trees: "#4a8a4a",  // individual tree instances (green)
+  Guideline: "#c8c860",  // guideline floor paths (yellow-green)
+  "Blk#2": "#16a085",  // AMR-50 body (teal) — before "Blk"
+  "White#2": "#f5c842",  // AMR-10 accent (yellow) — before "White"
+  "White#3": "#1abc9c",  // AMR-50 accent (teal) — before "White"
+  "grey#2": "#117a65",  // AMR-50 detail (dark teal) — before "grey"
+  Blk: "#2980b9",  // APT-20 body (blue)
+  White: "#4ab0d9",  // APT-20 accent (light blue)
+  Black: "#f39c12",  // AMR-10 body (orange)
+  grey: "#888888",  // AMR-10 detail (grey)
+  L11: "#c87a7a",  // L11 elements (red-pink)
+  amr10: "#8a9a8a",  // AMR-10 disc base (grey)
+  B1: "#c8956c",  // B1 building shell fallback (orange-brown)
 };
 
 // Keys must be ordered most-specific first (startsWith matching)
@@ -172,7 +172,7 @@ function Scene2Model() {
 }
 
 // ─── APT-20 animation: straight -Z slide ─────────────────────────────
-const PHASE3_START = 0.85; // scroll threshold used by Scene2Setup camera phase
+const PHASE3_START = 0.67; // scroll threshold used by Scene2Setup camera phase
 const ANIM_TRIGGER = 0.70; // model animation starts at this scroll value
 
 function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRefObject<number> }) {
@@ -199,7 +199,7 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
       const all: Part[] = [];
       scene.traverse((obj: THREE.Object3D) => {
         const nm = obj.name ?? "";
-        const isAptBody   = nm.startsWith("Blk") && !nm.startsWith("Blk#");
+        const isAptBody = nm.startsWith("Blk") && !nm.startsWith("Blk#");
         const isAptAccent = nm.startsWith("White") && !nm.startsWith("White#");
         if (isAptBody || isAptAccent)
           all.push({ obj, initPos: obj.position.clone(), initRotZ: obj.rotation.z });
@@ -219,7 +219,7 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
     const t = Math.max(Math.min(rawT, 1), 0);
     const ease = (x: number) => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2;
 
-    const SPLIT   = 0.75;  // end of phase 1 — model has travelled 1.5 units in -X
+    const SPLIT = 0.75;  // end of phase 1 — model has travelled 1.5 units in -X
     const ROT_END = 0.875; // end of rotation sub-phase — 90° spin complete
 
     parts.current.forEach(({ obj, initPos, initRotZ }) => {
@@ -252,9 +252,14 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
 // ─── AMR-10 (yellow) animation ───────────────────────────────────────
 const AMR10_TRIGGER = 0.40; // starts earlier than the APT-20 animation
 
-function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRefObject<number> }) {
+function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
+  scene2SmoothedRef: React.MutableRefObject<number>;
+  amr10DoneRef: React.MutableRefObject<boolean>;
+  pendingScene3Ref: React.MutableRefObject<boolean>;
+}) {
   const { scene } = useThree();
   const discovered = useRef(false);
+  const doneFired = useRef(false);
   const moveDist = useRef(10.0);
   const boundsComputed = useRef(false);
   type Part = {
@@ -267,6 +272,7 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
 
   useEffect(() => {
     discovered.current = false;
+    doneFired.current = false;
     parts.current = [];
     return () => {
       parts.current.forEach(({ obj, initLocalPos, initLocalRotZ }) => {
@@ -353,15 +359,15 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
     const robotSpeedAfter = cameraSpeed * 2.70; // 2.70x faster translation after pause
     const robotSpeedX = cameraSpeed * 7.00;
 
-    const T1_START    = 0.40;
-    const duration1   = 2.7 / robotSpeed;
-    const T1_END      = T1_START + duration1;
-    const T_HOLD_END  = T1_END + 0.08; // increased pause scroll window by 0.06 (~1s scroll time)
-    const duration2   = 0.7 / robotSpeedAfter;
-    const T2_END      = T_HOLD_END + duration2;
-    const T_ROT_END   = T2_END + 0.015;
-    const duration3   = 2.0 / robotSpeedX;
-    const T_X_END     = T_ROT_END + duration3;
+    const T1_START = 0.40;
+    const duration1 = 2.7 / robotSpeed;
+    const T1_END = T1_START + duration1;
+    const T_HOLD_END = T1_END;
+    const duration2 = 0.7 / robotSpeedAfter;
+    const T2_END = T_HOLD_END + duration2;
+    const T_ROT_END = T2_END + 0.015;
+    const duration3 = 2.0 / robotSpeedX;
+    const T_X_END = T_ROT_END + duration3;
 
     // Compute Z travel distance
     let distZ = 0;
@@ -426,6 +432,17 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
       // 5. Apply local rotation
       obj.rotation.z = initLocalRotZ + rot;
     });
+
+    if (!doneFired.current && t >= T_X_END) {
+      doneFired.current = true;
+      amr10DoneRef.current = true;
+      if (pendingScene3Ref.current) {
+        pendingScene3Ref.current = false;
+        transitionState.phase = "out";
+        transitionState.progress = 0;
+        transitionState.targetScene = 3;
+      }
+    }
   });
 
   return null;
@@ -462,7 +479,7 @@ function APT20PickupAnimation({ scene2SmoothedRef }: { scene2SmoothedRef: React.
       const allApt: RobotPart[] = [];
       scene.traverse((obj: THREE.Object3D) => {
         const nm = obj.name ?? "";
-        const isAptBody   = nm.startsWith("Blk") && !nm.startsWith("Blk#");
+        const isAptBody = nm.startsWith("Blk") && !nm.startsWith("Blk#");
         const isAptAccent = nm.startsWith("White") && !nm.startsWith("White#");
         if (isAptBody || isAptAccent) allApt.push({ obj, initPos: obj.position.clone() });
       });
@@ -517,10 +534,10 @@ function APT20PickupAnimation({ scene2SmoothedRef }: { scene2SmoothedRef: React.
 }
 
 // ─── Scene 3 camera ──────────────────────────────────────────────────
-const S3_A_POS    = new THREE.Vector3(-13.264,  1.074, -10.294);
-const S3_A_TARGET = new THREE.Vector3(-12.535,  0.863, -10.577);
-const S3_B_POS    = new THREE.Vector3(-13.264,  1.074, -0.082);
-const S3_B_TARGET = new THREE.Vector3( -9.879,  0.160, -0.602);
+const S3_A_POS = new THREE.Vector3(-13.264, 1.074, -10.294);
+const S3_A_TARGET = new THREE.Vector3(-12.535, 0.863, -10.577);
+const S3_B_POS = new THREE.Vector3(-13.264, 1.074, -0.082);
+const S3_B_TARGET = new THREE.Vector3(-9.879, 0.160, -0.602);
 
 function Scene3Camera({
   scene3SmoothedRef,
@@ -831,7 +848,7 @@ function Scene2Setup({
 
     const sideDrift = rightVec.current.clone().multiplyScalar(-LATERAL_DRIFT_AMOUNT);
     const EXTRA_PARALLEL = 0.75; // extended parallel distance (Phase 2)
-    const EXTRA_DOLLY    = 0.55;  // Phase 3 dolly distance along facing direction
+    const EXTRA_DOLLY = 0.9;  // Phase 3 dolly distance along facing direction
 
     // Anchor: end of Phase 2 parallel (= Phase 3 start)
     const parallelEndFwdOffset = forwardVec.current.clone().multiplyScalar((1.0 + EXTRA_PARALLEL) * moveDist.current);
@@ -851,7 +868,7 @@ function Scene2Setup({
       // Phase 1 — diagonal entry then parallel forward travel
       const pct = t / TURN_START;
 
-      const forwardOffset = forwardVec.current.clone().multiplyScalar(pct * moveDist.current);
+      const forwardOffset = forwardVec.current.clone().multiplyScalar(pct * (1.0 + EXTRA_PARALLEL) * moveDist.current);
       const currentOffset = new THREE.Vector3().addVectors(forwardOffset, currentSidewaysDrift);
 
       const camPos = new THREE.Vector3().addVectors(basePos.current, currentOffset);
@@ -865,7 +882,7 @@ function Scene2Setup({
 
     } else if (t <= PHASE3_START) {
       // Phase 2 — extended parallel forward
-      const pct = (t - TURN_START) / (PHASE3_START - TURN_START);
+      const pct = ss((t - TURN_START) / (PHASE3_START - TURN_START));
       const fwdPct = 1.0 + pct * EXTRA_PARALLEL;
       const currentFwdOffset = forwardVec.current.clone().multiplyScalar(fwdPct * moveDist.current);
       const camPos = new THREE.Vector3().addVectors(basePos.current, currentFwdOffset).add(sideDrift);
@@ -882,7 +899,8 @@ function Scene2Setup({
     } else {
       // Phase 3 — translate horizontally in the direction the camera is facing (no zoom)
       const DOLLY_START = PHASE3_START;
-      const pct = t > DOLLY_START ? ss((t - DOLLY_START) / (1.0 - DOLLY_START)) : 0;
+      const rawPct = t > DOLLY_START ? (t - DOLLY_START) / (1.0 - DOLLY_START) : 0;
+      const pct = Math.pow(rawPct, 3); // cubic ease-in: very slow start, gradually accelerates
       // Use only the horizontal (XZ) component of the facing direction so height stays locked
       const phase3MoveDir = new THREE.Vector3(phase3Dir.x, 0, phase3Dir.z).normalize();
       const moveOffset = phase3MoveDir.clone().multiplyScalar(pct * EXTRA_DOLLY * moveDist.current);
@@ -910,6 +928,8 @@ export default function ModelViewer() {
   const camPosSpan = useRef<HTMLSpanElement>(null);
   const camTargetSpan = useRef<HTMLSpanElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
+  const amr10DoneRef = useRef(false);
+  const pendingScene3Ref = useRef(false);
 
   const handleSwitch = useCallback((target: 1 | 2 | 3) => {
     setActiveScene(target);
@@ -921,6 +941,8 @@ export default function ModelViewer() {
         scrollRef.current = 0.97;
         if (progressRef.current) progressRef.current.style.width = "97%";
       } else if (target === 2) {
+        amr10DoneRef.current = false;
+        pendingScene3Ref.current = false;
         if (activeScene === 1) {
           lenis.scrollTo(0.33 * maxScroll, { immediate: true });
           scene2ScrollRef.current = 0;
@@ -1005,10 +1027,15 @@ export default function ModelViewer() {
       } else if (activeScene === 2) {
         // Scene 2: range [0.33, 0.66]
         if (progress >= 0.66) {
-          lenis.stop();
-          transitionState.phase = "out";
-          transitionState.progress = 0;
-          transitionState.targetScene = 3;
+          if (amr10DoneRef.current) {
+            lenis.stop();
+            transitionState.phase = "out";
+            transitionState.progress = 0;
+            transitionState.targetScene = 3;
+          } else {
+            pendingScene3Ref.current = true;
+            lenis.stop();
+          }
         } else if (progress <= 0.28) {
           lenis.stop();
           transitionState.phase = "out";
@@ -1068,7 +1095,7 @@ export default function ModelViewer() {
             </Suspense>
 
             {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
-            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} />}
+            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} pendingScene3Ref={pendingScene3Ref} />}
             {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
 
             {activeScene === 1 && (
