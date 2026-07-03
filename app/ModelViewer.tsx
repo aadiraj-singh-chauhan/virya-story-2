@@ -20,7 +20,7 @@ const SCENE3_COLORS: Record<string, string> = {
   "dispatch zone": "#e9e7ec",
   "heavy assembly": "#ece9e3",
   warehouse: "#eaebec",
-  "Material__1": "#ceccc8",
+  "Material__1": "#f0ede8",
   trees2: "#d2d5ce",
   trees: "#d8dbd4",
   Guideline: "#c8c8c4",
@@ -74,33 +74,37 @@ const ANAGLYPH_VERT = `
     gl_Position = clip;
   }
 `;
-const ANAGLYPH_FRAG_RED  = `void main() { gl_FragColor = vec4(0.82, 0.08, 0.08, 0.10); }`;
-const ANAGLYPH_FRAG_CYAN = `void main() { gl_FragColor = vec4(0.04, 0.72, 0.86, 0.10); }`;
+const ANAGLYPH_FRAG_RED  = `void main() { gl_FragColor = vec4(0.82, 0.08, 0.08, 0.033); }`;
+const ANAGLYPH_FRAG_CYAN = `void main() { gl_FragColor = vec4(0.04, 0.72, 0.86, 0.033); }`;
 
 function buildScene(scene: THREE.Group, colors: Record<string, string>) {
   scene.traverse((child: any) => {
     if (child.isLight) { child.intensity = 0; child.visible = false; }
     if (child.isMesh) {
+      const name: string = child.name || child.parent?.name || "";
+      if (name.toLowerCase().startsWith("disc")) { child.visible = false; return; }
       child.castShadow = true;
       child.receiveShadow = true;
-      const name: string = child.name || child.parent?.name || "";
       const color = resolveColor(name, colors) ?? resolveColor(child.parent?.name ?? "", colors);
       child.material = new THREE.MeshStandardMaterial({
         color: color ?? "#f0f0f0", roughness: 0.88, metalness: 0.0,
+        transparent: true, opacity: 0.72,
       });
-      const edgeGeo = new THREE.EdgesGeometry(child.geometry, 20);
-      child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
-        uniforms: { uOffset: { value: -0.0014 } },
-        vertexShader: ANAGLYPH_VERT,
-        fragmentShader: ANAGLYPH_FRAG_RED,
-        transparent: true, depthWrite: false,
-      })));
-      child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
-        uniforms: { uOffset: { value:  0.0014 } },
-        vertexShader: ANAGLYPH_VERT,
-        fragmentShader: ANAGLYPH_FRAG_CYAN,
-        transparent: true, depthWrite: false,
-      })));
+      if (name !== "Material__1") {
+        const edgeGeo = new THREE.EdgesGeometry(child.geometry, 20);
+        child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
+          uniforms: { uOffset: { value: -0.00047 } },
+          vertexShader: ANAGLYPH_VERT,
+          fragmentShader: ANAGLYPH_FRAG_RED,
+          transparent: true, depthWrite: false,
+        })));
+        child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
+          uniforms: { uOffset: { value:  0.00047 } },
+          vertexShader: ANAGLYPH_VERT,
+          fragmentShader: ANAGLYPH_FRAG_CYAN,
+          transparent: true, depthWrite: false,
+        })));
+      }
     }
   });
   return scene;
@@ -956,6 +960,7 @@ function Scene2Setup({
 // ─── Main component ──────────────────────────────────────────────────
 export default function ModelViewer() {
   const [activeScene, setActiveScene] = useState<1 | 2 | 3>(1);
+  const [freeCam2, setFreeCam2] = useState(false);
   const [freeCam3, setFreeCam3] = useState(false);
   const scrollRef = useRef(0);
   const scene2ScrollRef = useRef(0);
@@ -966,6 +971,8 @@ export default function ModelViewer() {
   const overlayRef = useRef<HTMLDivElement>(null);
   const camPosSpan = useRef<HTMLSpanElement>(null);
   const camTargetSpan = useRef<HTMLSpanElement>(null);
+  const cam2PosSpan = useRef<HTMLSpanElement>(null);
+  const cam2TargetSpan = useRef<HTMLSpanElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
   const amr10DoneRef = useRef(false);
   const pendingScene3Ref = useRef(false);
@@ -1157,31 +1164,32 @@ export default function ModelViewer() {
           <Canvas
             shadows
             camera={{ position: [-6, 4, 3], fov: 50 }}
-            gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.4, outputColorSpace: THREE.SRGBColorSpace }}
+            gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1, outputColorSpace: THREE.SRGBColorSpace }}
           >
             <color attach="background" args={["#f0ede8"]} />
-            <ambientLight intensity={activeScene === 2 ? 1.6 : activeScene === 3 ? 1.5 : 1.4} />
-            <directionalLight position={[5, 8, 5]} intensity={activeScene === 2 ? 0.9 : activeScene === 3 ? 0.8 : 0.7}
+            <ambientLight intensity={0.65} />
+            <directionalLight position={[5, 8, 5]} intensity={2.0}
               castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} />
-            <directionalLight position={[-5, 4, -5]} intensity={activeScene === 2 ? 0.5 : activeScene === 3 ? 0.4 : 0.3} />
-            {(activeScene === 2 || activeScene === 3) && <directionalLight position={[0, 10, 0]} intensity={0.3} />}
+            <directionalLight position={[-5, 4, -5]} intensity={0.4} />
+            {activeScene === 2 && <directionalLight position={[0, 10, 0]} intensity={0.45} />}
 
             <Suspense fallback={null}>
               {activeScene === 1 && <Scene1Model />}
-              {(activeScene === 2 || activeScene === 3) && <Scene2Model />}
+              {activeScene === 2 && <Scene2Model />}
               {activeScene === 3 && <Scene3Model />}
             </Suspense>
 
-            {(activeScene === 2 || activeScene === 3) && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
-            {(activeScene === 2 || activeScene === 3) && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} onAmr10DoneRef={onAmr10DoneRef} />}
-            {(activeScene === 2 || activeScene === 3) && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
+            {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
+            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} onAmr10DoneRef={onAmr10DoneRef} />}
+            {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
 
             {activeScene === 1 && (
               <ScrollCamera
                 scrollRef={scrollRef}
               />
             )}
-            {(activeScene === 2 || activeScene === 3) && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} amr10DoneRef={amr10DoneRef} />}
+            {activeScene === 2 && !freeCam2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} amr10DoneRef={amr10DoneRef} />}
+            {activeScene === 2 && freeCam2 && <Scene3FreeCam posRef={cam2PosSpan} targetRef={cam2TargetSpan} />}
             {activeScene === 3 && !freeCam3 && <Scene3Camera scene3SmoothedRef={scene3SmoothedRef} scene3ScrollRef={scene3ScrollRef} />}
             {activeScene === 3 && !freeCam3 && <Scene3ModelAnimation scene3SmoothedRef={scene3SmoothedRef} />}
             {activeScene === 3 && freeCam3 && <Scene3FreeCam posRef={camPosSpan} targetRef={camTargetSpan} />}
@@ -1195,6 +1203,46 @@ export default function ModelViewer() {
             background: "#000", opacity: 0, pointerEvents: "none",
             transition: "none",
           }} />
+
+          {/* Scene 2 camera controls + live position HUD */}
+          {activeScene === 2 && (
+            <div style={{ position: "absolute", top: 14, right: 14, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", zIndex: 10 }}>
+              <button
+                onClick={() => setFreeCam2(f => !f)}
+                style={{
+                  background: freeCam2 ? "#b08ac8" : "rgba(0,0,0,0.55)",
+                  color: "#fff",
+                  border: `1px solid ${freeCam2 ? "#b08ac8" : "rgba(255,255,255,0.18)"}`,
+                  borderRadius: 4,
+                  padding: "5px 14px",
+                  fontFamily: "system-ui, sans-serif",
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                {freeCam2 ? "STORY CAM" : "FREE CAM"}
+              </button>
+              {freeCam2 && (
+                <div style={{
+                  background: "rgba(0,0,0,0.72)",
+                  color: "#e0e0e0",
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  padding: "10px 14px",
+                  borderRadius: 4,
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  lineHeight: 2,
+                  minWidth: 270,
+                }}>
+                  <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 4 }}>CAMERA POSITION</div>
+                  <div>pos &nbsp;&nbsp;: <span ref={cam2PosSpan} style={{ color: "#f5c842" }} /></div>
+                  <div>target: <span ref={cam2TargetSpan} style={{ color: "#4ab0d9" }} /></div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Scene 3 camera controls + live position HUD */}
           {activeScene === 3 && (
