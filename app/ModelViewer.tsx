@@ -290,6 +290,8 @@ function AMR10Animation({ scene2SmoothedRef }: {
   const { scene } = useThree();
   const discovered = useRef(false);
   const moveDist = useRef(10.0);
+  const sceneMinX = useRef(0);
+  const aisleEndDistance = useRef(0.6);
   const boundsComputed = useRef(false);
   type Part = {
     obj: THREE.Object3D;
@@ -323,6 +325,7 @@ function AMR10Animation({ scene2SmoothedRef }: {
         const size = new THREE.Vector3();
         box.getSize(size);
         moveDist.current = size.z * 0.45;
+        sceneMinX.current = box.min.x;
         boundsComputed.current = true;
         amr10State.stopScrollAt = 1.0;
       }
@@ -369,6 +372,17 @@ function AMR10Animation({ scene2SmoothedRef }: {
       const cx = instance.reduce((s, p) => s + p.wx, 0) / instance.length;
       const cz = instance.reduce((s, p) => s + p.wz, 0) / instance.length;
 
+      // After the 90° turn, the robot's original Z extent becomes its X
+      // extent. Stop its body just inside the warehouse's left aisle edge.
+      const robotBox = new THREE.Box3();
+      instance.forEach(({ obj }) => robotBox.expandByObject(obj));
+      const robotSize = new THREE.Vector3();
+      const robotCenter = new THREE.Vector3();
+      robotBox.getSize(robotSize);
+      robotBox.getCenter(robotCenter);
+      const endCenterX = sceneMinX.current + robotSize.z * 0.5 + 0.12;
+      aisleEndDistance.current = Math.max(0.6, robotCenter.x - endCenterX);
+
       parts.current = instance.map(({ obj }) => {
         const initWorldPos = new THREE.Vector3();
         obj.getWorldPosition(initWorldPos);
@@ -388,7 +402,6 @@ function AMR10Animation({ scene2SmoothedRef }: {
     const cameraSpeed = moveDist.current / TURN_START; // world units per scroll unit
     const robotSpeed = cameraSpeed * 1.43; // 45% faster than the camera
     const robotSpeedAfter = cameraSpeed * 2.70; // 2.70x faster translation after pause
-    const robotSpeedX = cameraSpeed * 1.43;
 
     const T1_START = 0.40;
     const duration1 = 2.7 / robotSpeed;
@@ -397,7 +410,6 @@ function AMR10Animation({ scene2SmoothedRef }: {
     const duration2 = 0.7 / robotSpeedAfter;
     const T2_END = T_HOLD_END + duration2;
     const T_ROT_END = T2_END + 0.015;
-    const duration3 = 1.0 - T_ROT_END;
     const T_X_END = 1.0;
 
     // Compute Z travel distance
@@ -427,7 +439,7 @@ function AMR10Animation({ scene2SmoothedRef }: {
     let distX = 0;
     if (t > T_ROT_END) {
       const pct = Math.min((t - T_ROT_END) / (T_X_END - T_ROT_END), 1);
-      distX = pct * 0.6;
+      distX = pct * aisleEndDistance.current;
     }
 
     // Compute initial centroid horizontal coordinates from static records
@@ -831,7 +843,11 @@ function Scene2Setup({
       }
     }
 
-    scene2Smoothed.current += (scene2ScrollRef.current - scene2Smoothed.current) * (1 - Math.exp(-delta * 4));
+    const scrollDelta = scene2ScrollRef.current - scene2Smoothed.current;
+    scene2Smoothed.current += scrollDelta * (1 - Math.exp(-delta * 4));
+    if (Math.abs(scrollDelta) < 0.001) {
+      scene2Smoothed.current = scene2ScrollRef.current;
+    }
 
 
 
@@ -988,6 +1004,7 @@ export default function ModelViewer() {
   const cam2PosSpan = useRef<HTMLSpanElement>(null);
   const cam2TargetSpan = useRef<HTMLSpanElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
+  const pendingScene3Ref = useRef(false);
 
   const handleSwitch = useCallback((target: 1 | 2 | 3) => {
     setActiveScene(target);
@@ -1000,11 +1017,13 @@ export default function ModelViewer() {
         if (progressRef.current) progressRef.current.style.width = "97%";
       } else if (target === 2) {
         if (activeScene === 1) {
+          pendingScene3Ref.current = false;
           amr10State.stopScrollAt = Infinity; // will be recomputed by AMR10Animation
           amr10State.holdUntil = 0;
           lenis.scrollTo(0.33 * maxScroll, { immediate: true, force: true });
           scene2ScrollRef.current = 0;
         } else {
+          pendingScene3Ref.current = false;
           // Return to the exact Scene 2 exit pose. The direction check in the
           // scroll handler prevents this programmatic jump from reopening Scene 3.
           const snapProgress = 0.99;
@@ -1042,7 +1061,14 @@ export default function ModelViewer() {
     let rafId: number;
     let isStopped = false;
     function raf(time: number) {
-      const targetStopped = transitionState.phase !== "idle";
+      if (pendingScene3Ref.current && scene2SmoothedRef.current >= 1) {
+        pendingScene3Ref.current = false;
+        transitionState.phase = "out";
+        transitionState.progress = 0;
+        transitionState.targetScene = 3;
+      }
+
+      const targetStopped = transitionState.phase !== "idle" || pendingScene3Ref.current;
       if (targetStopped !== isStopped) {
         isStopped = targetStopped;
         if (isStopped) lenis.stop();
@@ -1097,10 +1123,11 @@ export default function ModelViewer() {
         // Only forward user scrolling may enter Scene 3. This lets the reverse
         // transition restore the exact end pose without immediately looping.
         if (progress >= capProgress && e.direction > 0) {
+          // Hold the page at Scene 2's end while the smoothed camera/model
+          // timeline finishes. The RAF coordinator starts the fade afterward.
           lenis.stop();
-          transitionState.phase = "out";
-          transitionState.progress = 0;
-          transitionState.targetScene = 3;
+          scene2ScrollRef.current = 1;
+          pendingScene3Ref.current = true;
         } else if (progress <= 0.28) {
           lenis.stop();
           transitionState.phase = "out";
