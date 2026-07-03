@@ -217,7 +217,15 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
   }, [scene]);
 
   useFrame(() => {
-    if (scene2SmoothedRef.current < ANIM_TRIGGER) return;
+    if (scene2SmoothedRef.current < ANIM_TRIGGER) {
+      if (discovered.current) {
+        parts.current.forEach(({ obj, initPos, initRotZ }) => {
+          obj.position.copy(initPos);
+          obj.rotation.z = initRotZ;
+        });
+      }
+      return;
+    }
 
     if (!discovered.current) {
       const all: Part[] = [];
@@ -276,14 +284,11 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
 // ─── AMR-10 (yellow) animation ───────────────────────────────────────
 const AMR10_TRIGGER = 0.40; // starts earlier than the APT-20 animation
 
-function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
+function AMR10Animation({ scene2SmoothedRef }: {
   scene2SmoothedRef: React.MutableRefObject<number>;
-  amr10DoneRef: React.MutableRefObject<boolean>;
-  onAmr10DoneRef: React.MutableRefObject<() => void>;
 }) {
   const { scene } = useThree();
   const discovered = useRef(false);
-  const doneFired = useRef(false);
   const moveDist = useRef(10.0);
   const boundsComputed = useRef(false);
   type Part = {
@@ -296,10 +301,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
 
   useEffect(() => {
     discovered.current = false;
-    doneFired.current = false;
     parts.current = [];
-    amr10State.stopScrollAt = Infinity;
-    amr10State.holdUntil = 0;
     return () => {
       parts.current.forEach(({ obj, initLocalPos, initLocalRotZ }) => {
         obj.position.copy(initLocalPos);
@@ -322,9 +324,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
         box.getSize(size);
         moveDist.current = size.z * 0.45;
         boundsComputed.current = true;
-        // Pre-compute and store the scroll value at which the yellow robot stops
-        const cs = moveDist.current / 0.67;
-        amr10State.stopScrollAt = 0.40 + (2.7 / (cs * 1.43)) + (0.7 / (cs * 2.70)) + 0.015 + (2.0 / (cs * 7.00));
+        amr10State.stopScrollAt = 1.0;
       }
     }
 
@@ -388,7 +388,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
     const cameraSpeed = moveDist.current / TURN_START; // world units per scroll unit
     const robotSpeed = cameraSpeed * 1.43; // 45% faster than the camera
     const robotSpeedAfter = cameraSpeed * 2.70; // 2.70x faster translation after pause
-    const robotSpeedX = cameraSpeed * 7.00;
+    const robotSpeedX = cameraSpeed * 1.43;
 
     const T1_START = 0.40;
     const duration1 = 2.7 / robotSpeed;
@@ -397,8 +397,8 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
     const duration2 = 0.7 / robotSpeedAfter;
     const T2_END = T_HOLD_END + duration2;
     const T_ROT_END = T2_END + 0.015;
-    const duration3 = 1.5 / robotSpeedX;
-    const T_X_END = T_ROT_END + duration3;
+    const duration3 = 1.0 - T_ROT_END;
+    const T_X_END = 1.0;
 
     // Compute Z travel distance
     let distZ = 0;
@@ -427,7 +427,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
     let distX = 0;
     if (t > T_ROT_END) {
       const pct = Math.min((t - T_ROT_END) / (T_X_END - T_ROT_END), 1);
-      distX = pct * 2.0;
+      distX = pct * 0.6;
     }
 
     // Compute initial centroid horizontal coordinates from static records
@@ -464,11 +464,6 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
       obj.rotation.z = initLocalRotZ + rot;
     });
 
-    if (!doneFired.current && t >= T_X_END) {
-      doneFired.current = true;
-      amr10DoneRef.current = true;
-      onAmr10DoneRef.current(); // triggers the mandatory 100ms hold
-    }
   });
 
   return null;
@@ -498,7 +493,13 @@ function APT20PickupAnimation({ scene2SmoothedRef }: { scene2SmoothedRef: React.
   }, [scene]);
 
   useFrame(() => {
-    if (scene2SmoothedRef.current < APT20B_TRIGGER) return;
+    if (scene2SmoothedRef.current < APT20B_TRIGGER) {
+      if (discovered.current) {
+        robot.current.forEach(({ obj, initPos }) => obj.position.copy(initPos));
+        boxes.current.forEach(({ obj, initPos }) => obj.position.copy(initPos));
+      }
+      return;
+    }
 
     if (!discovered.current) {
       // Collect all APT-20 parts
@@ -776,11 +777,9 @@ function FadeController({
 function Scene2Setup({
   scene2SmoothedRef,
   scene2ScrollRef,
-  amr10DoneRef,
 }: {
   scene2SmoothedRef: React.MutableRefObject<number>;
   scene2ScrollRef: React.MutableRefObject<number>;
-  amr10DoneRef: React.MutableRefObject<boolean>;
 }) {
   const { camera, scene } = useThree();
   const scene2Smoothed = useRef(scene2SmoothedRef.current);
@@ -804,6 +803,14 @@ function Scene2Setup({
     camera.position.copy(basePos.current);
     camera.lookAt(baseLook.current);
     initialized.current = true;
+
+    return () => {
+      const persCam = camera as THREE.PerspectiveCamera;
+      if (persCam.isPerspectiveCamera) {
+        persCam.fov = 50;
+        persCam.updateProjectionMatrix();
+      }
+    };
   }, [camera]);
 
   useFrame((_, delta) => {
@@ -826,12 +833,7 @@ function Scene2Setup({
 
     scene2Smoothed.current += (scene2ScrollRef.current - scene2Smoothed.current) * (1 - Math.exp(-delta * 4));
 
-    // Hard-clamp the camera at the yellow robot's stopping point until it finishes
-    // AND for 100ms after (the mandatory hold). This is the authoritative lock —
-    // no matter how fast the user scrolls, the camera cannot pass this position.
-    if (amr10State.stopScrollAt < Infinity && (!amr10DoneRef.current || Date.now() < amr10State.holdUntil)) {
-      scene2Smoothed.current = Math.min(scene2Smoothed.current, amr10State.stopScrollAt);
-    }
+
 
     scene2SmoothedRef.current = scene2Smoothed.current;
     const t = scene2Smoothed.current;
@@ -891,7 +893,7 @@ function Scene2Setup({
 
     const sideDrift = rightVec.current.clone().multiplyScalar(-LATERAL_DRIFT_AMOUNT);
     const EXTRA_PARALLEL = 0.75; // extended parallel distance (Phase 2)
-    const EXTRA_DOLLY = 0.9;  // Phase 3 dolly distance along facing direction
+    const EXTRA_DOLLY = 0.35;  // Phase 3 dolly distance along facing direction
 
     // Anchor: end of Phase 2 parallel (= Phase 3 start)
     const parallelEndFwdOffset = forwardVec.current.clone().multiplyScalar((1.0 + EXTRA_PARALLEL) * moveDist.current);
@@ -906,6 +908,18 @@ function Scene2Setup({
     const phase3Dir = applyAngle(
       new THREE.Vector3().subVectors(parallelEndFwdLook, camAtParallelEnd).normalize(), 1, 1
     );
+
+    // Adjust FOV for zoom-in as it moves parallel
+    let fov = 50;
+    if (t > 0.20) {
+      const zoomPct = Math.min((t - 0.20) / (0.40 - 0.20), 1.0);
+      fov = 50 - zoomPct * 14; // Zoom in from 50 down to 36
+    }
+    const persCam = camera as THREE.PerspectiveCamera;
+    if (persCam.isPerspectiveCamera && persCam.fov !== fov) {
+      persCam.fov = fov;
+      persCam.updateProjectionMatrix();
+    }
 
     if (t <= TURN_START) {
       // Phase 1 — diagonal entry then parallel forward travel
@@ -943,10 +957,10 @@ function Scene2Setup({
       // Phase 3 — translate horizontally in the direction the camera is facing (no zoom)
       const DOLLY_START = PHASE3_START;
       const rawPct = t > DOLLY_START ? (t - DOLLY_START) / (1.0 - DOLLY_START) : 0;
-      const pct = Math.pow(rawPct, 3); // cubic ease-in: very slow start, gradually accelerates
+      const pct = Math.pow(rawPct, 4); // quartic ease-in: very slow start, gradually accelerates
       // Use only the horizontal (XZ) component of the facing direction so height stays locked
       const phase3MoveDir = new THREE.Vector3(phase3Dir.x, 0, phase3Dir.z).normalize();
-      const moveOffset = phase3MoveDir.clone().multiplyScalar(pct * EXTRA_DOLLY * moveDist.current);
+      const moveOffset = phase3MoveDir.clone().multiplyScalar(pct * 0.4); // fixed travel distance of 0.4 units (slower than model's 1.6)
       const camPos = new THREE.Vector3().addVectors(camAtParallelEnd, moveOffset);
       camera.position.copy(camPos);
       // Look target moves with the camera by the same offset → angle stays constant, no zoom
@@ -974,36 +988,6 @@ export default function ModelViewer() {
   const cam2PosSpan = useRef<HTMLSpanElement>(null);
   const cam2TargetSpan = useRef<HTMLSpanElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
-  const amr10DoneRef = useRef(false);
-  const pendingScene3Ref = useRef(false);
-  const pendingAmr10UnlockRef = useRef(false);
-  const onAmr10DoneRef = useRef(() => { });
-
-  // Rebuild the callback every render so it always closes over the latest refs.
-  onAmr10DoneRef.current = () => {
-    const hadPendingScene3 = pendingScene3Ref.current;
-    pendingScene3Ref.current = false;
-    // Lock camera for 100ms
-    amr10State.holdUntil = Date.now() + 100;
-    pendingAmr10UnlockRef.current = true; // RAF loop will keep Lenis stopped
-    lenisRef.current?.stop();             // stop immediately too
-    scene2ScrollRef.current = amr10State.stopScrollAt; // freeze scroll target
-    setTimeout(() => {
-      pendingAmr10UnlockRef.current = false; // RAF loop restarts Lenis on next tick
-      if (hadPendingScene3) {
-        transitionState.phase = "out";
-        transitionState.progress = 0;
-        transitionState.targetScene = 3;
-      } else {
-        // Snap Lenis back to the stop position so user scrolls forward from there
-        const lenis = lenisRef.current;
-        if (lenis && amr10State.stopScrollAt < Infinity) {
-          const tp = 0.33 + amr10State.stopScrollAt * 0.33;
-          lenis.scrollTo(tp * lenis.limit, { immediate: true });
-        }
-      }
-    }, 100);
-  };
 
   const handleSwitch = useCallback((target: 1 | 2 | 3) => {
     setActiveScene(target);
@@ -1011,29 +995,25 @@ export default function ModelViewer() {
     if (lenis) {
       const maxScroll = lenis.limit;
       if (target === 1) {
-        lenis.scrollTo(0.32 * maxScroll, { immediate: true });
+        lenis.scrollTo(0.32 * maxScroll, { immediate: true, force: true });
         scrollRef.current = 0.97;
         if (progressRef.current) progressRef.current.style.width = "97%";
       } else if (target === 2) {
         if (activeScene === 1) {
-          amr10DoneRef.current = false;
-          pendingScene3Ref.current = false;
-          pendingAmr10UnlockRef.current = false;
           amr10State.stopScrollAt = Infinity; // will be recomputed by AMR10Animation
           amr10State.holdUntil = 0;
-          lenis.scrollTo(0.33 * maxScroll, { immediate: true });
+          lenis.scrollTo(0.33 * maxScroll, { immediate: true, force: true });
           scene2ScrollRef.current = 0;
         } else {
-          // Returning from Scene 3: restore Scene 2 at its completed Phase 3 state.
-          amr10DoneRef.current = true;
-          pendingScene3Ref.current = false;
+          // Return to the exact Scene 2 exit pose. The direction check in the
+          // scroll handler prevents this programmatic jump from reopening Scene 3.
+          const snapProgress = 0.99;
           scene2ScrollRef.current = 1.0;
           scene2SmoothedRef.current = 1.0;
-          lenis.scrollTo(0.66 * maxScroll - 1, { immediate: true });
-          // scene2ScrollRef.current is set to 1.0 to ensure final state
+          lenis.scrollTo(snapProgress * maxScroll, { immediate: true, force: true });
         }
       } else if (target === 3) {
-        lenis.scrollTo(0.66 * maxScroll, { immediate: true });
+        lenis.scrollTo(0.45 * maxScroll, { immediate: true, force: true });
         scene3ScrollRef.current = 0;
       }
     }
@@ -1062,7 +1042,7 @@ export default function ModelViewer() {
     let rafId: number;
     let isStopped = false;
     function raf(time: number) {
-      const targetStopped = transitionState.phase !== "idle" || pendingAmr10UnlockRef.current;
+      const targetStopped = transitionState.phase !== "idle";
       if (targetStopped !== isStopped) {
         isStopped = targetStopped;
         if (isStopped) lenis.stop();
@@ -1107,33 +1087,33 @@ export default function ModelViewer() {
           }
         }
       } else if (activeScene === 2) {
-        // Scene 2: range [0.33, 0.66]
-        if (progress >= 0.66) {
-          if (amr10DoneRef.current) {
-            lenis.stop();
-            transitionState.phase = "out";
-            transitionState.progress = 0;
-            transitionState.targetScene = 3;
-          } else {
-            pendingScene3Ref.current = true;
-            lenis.stop();
-          }
+        // Scene 2: range [0.33, 0.99]
+        const rawLocal = Math.min(Math.max((progress - 0.33) / 0.66, 0), 1);
+        scene2ScrollRef.current = rawLocal;
+
+        const localThreshold = amr10State.stopScrollAt < Infinity ? amr10State.stopScrollAt : 0.90;
+        const capProgress = 0.33 + localThreshold * 0.66;
+
+        // Only forward user scrolling may enter Scene 3. This lets the reverse
+        // transition restore the exact end pose without immediately looping.
+        if (progress >= capProgress && e.direction > 0) {
+          lenis.stop();
+          transitionState.phase = "out";
+          transitionState.progress = 0;
+          transitionState.targetScene = 3;
         } else if (progress <= 0.28) {
           lenis.stop();
           transitionState.phase = "out";
           transitionState.progress = 0;
           transitionState.targetScene = 1;
-        } else {
-          const rawLocal = Math.min(Math.max((progress - 0.33) / 0.33, 0), 1);
-          scene2ScrollRef.current = rawLocal;
         }
       } else if (activeScene === 3) {
-        // Scene 3: range [0.66, 1.00]
+        // Scene 3: range [0.45, 1.00]
 
-        const local = Math.min(Math.max((progress - 0.66) / 0.34, 0), 1);
+        const local = Math.min(Math.max((progress - 0.45) / 0.55, 0), 1);
         scene3ScrollRef.current = local;
 
-        if (progress <= 0.61) {
+        if (progress <= 0.41) {
           lenis.stop();
           transitionState.phase = "out";
           transitionState.progress = 0;
@@ -1180,7 +1160,7 @@ export default function ModelViewer() {
             </Suspense>
 
             {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
-            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} onAmr10DoneRef={onAmr10DoneRef} />}
+            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} />}
             {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
 
             {activeScene === 1 && (
@@ -1188,7 +1168,7 @@ export default function ModelViewer() {
                 scrollRef={scrollRef}
               />
             )}
-            {activeScene === 2 && !freeCam2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} amr10DoneRef={amr10DoneRef} />}
+            {activeScene === 2 && !freeCam2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} />}
             {activeScene === 2 && freeCam2 && <Scene3FreeCam posRef={cam2PosSpan} targetRef={cam2TargetSpan} />}
             {activeScene === 3 && !freeCam3 && <Scene3Camera scene3SmoothedRef={scene3SmoothedRef} scene3ScrollRef={scene3ScrollRef} />}
             {activeScene === 3 && !freeCam3 && <Scene3ModelAnimation scene3SmoothedRef={scene3SmoothedRef} />}
