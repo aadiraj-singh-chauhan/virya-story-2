@@ -5,6 +5,7 @@ import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { Center, OrbitControls, Html } from "@react-three/drei";
 import { GLTFLoader, DRACOLoader, MeshoptDecoder } from "three-stdlib";
 import * as THREE from "three";
+import Lenis from "lenis";
 
 // ─── Colours ────────────────────────────────────────────────────────
 const SCENE1_COLORS: Record<string, string> = {
@@ -171,8 +172,8 @@ function Scene2Model() {
 }
 
 // ─── APT-20 animation: straight -Z slide ─────────────────────────────
-const PHASE3_START = 0.90; // scroll threshold used by Scene2Setup camera phase
-const ANIM_TRIGGER = 0.80; // model animation starts at this scroll value
+const PHASE3_START = 0.85; // scroll threshold used by Scene2Setup camera phase
+const ANIM_TRIGGER = 0.70; // model animation starts at this scroll value
 
 function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRefObject<number> }) {
   const { scene } = useThree();
@@ -214,7 +215,7 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
       discovered.current = true;
     }
 
-    const rawT = ((scene2SmoothedRef.current - ANIM_TRIGGER) / (1.0 - ANIM_TRIGGER)) * 1.5;
+    const rawT = ((scene2SmoothedRef.current - ANIM_TRIGGER) / (1.0 - ANIM_TRIGGER)) * 1.2;
     const t = Math.max(Math.min(rawT, 1), 0);
     const ease = (x: number) => x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2;
 
@@ -355,7 +356,7 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
     const T1_START    = 0.40;
     const duration1   = 2.7 / robotSpeed;
     const T1_END      = T1_START + duration1;
-    const T_HOLD_END  = T1_END + 0.02;
+    const T_HOLD_END  = T1_END + 0.08; // increased pause scroll window by 0.06 (~1s scroll time)
     const duration2   = 0.7 / robotSpeedAfter;
     const T2_END      = T_HOLD_END + duration2;
     const T_ROT_END   = T2_END + 0.015;
@@ -367,7 +368,9 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
     if (t <= T1_START) {
       distZ = 0;
     } else if (t <= T1_END) {
-      distZ = (t - T1_START) * robotSpeed;
+      const pct = (t - T1_START) / duration1;
+      const easedPct = 1 - Math.pow(1 - pct, 2); // quadratic ease-out braking deceleration
+      distZ = easedPct * 2.7;
     } else if (t <= T_HOLD_END) {
       distZ = 2.7;
     } else if (t <= T2_END) {
@@ -431,7 +434,7 @@ function AMR10Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutabl
 
 // ─── APT-20 (second instance) pickup animation ───────────────────────
 // Robot nudges forward then the 2 nearest boxes rise up onto it.
-const APT20B_TRIGGER = 0.30;
+const APT20B_TRIGGER = 0.22;
 
 function APT20PickupAnimation({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRefObject<number> }) {
   const { scene } = useThree();
@@ -519,9 +522,14 @@ const S3_A_TARGET = new THREE.Vector3(-12.535,  0.863, -10.577);
 const S3_B_POS    = new THREE.Vector3(-13.264,  1.074, -0.082);
 const S3_B_TARGET = new THREE.Vector3( -9.879,  0.160, -0.602);
 
-function Scene3Camera({ scene3SmoothedRef }: { scene3SmoothedRef: React.MutableRefObject<number> }) {
+function Scene3Camera({
+  scene3SmoothedRef,
+  scene3ScrollRef,
+}: {
+  scene3SmoothedRef: React.MutableRefObject<number>;
+  scene3ScrollRef: React.MutableRefObject<number>;
+}) {
   const { camera } = useThree();
-  const scene3Scroll = useRef(0);
   const scene3Smoothed = useRef(0);
 
   useEffect(() => {
@@ -529,28 +537,8 @@ function Scene3Camera({ scene3SmoothedRef }: { scene3SmoothedRef: React.MutableR
     camera.lookAt(S3_A_TARGET);
   }, [camera]);
 
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (transitionState.phase !== "idle") return;
-      const scrollSpeed = 0.0004;
-      if (e.deltaY > 0) {
-        scene3Scroll.current = Math.min(scene3Scroll.current + e.deltaY * scrollSpeed, 1);
-      } else {
-        if (scene3Scroll.current > 0) {
-          scene3Scroll.current = Math.max(scene3Scroll.current + e.deltaY * scrollSpeed, 0);
-        } else {
-          transitionState.phase = "out";
-          transitionState.progress = 0;
-          transitionState.targetScene = 2;
-        }
-      }
-    };
-    window.addEventListener("wheel", handleWheel);
-    return () => window.removeEventListener("wheel", handleWheel);
-  }, []);
-
   useFrame((_, delta) => {
-    scene3Smoothed.current += (scene3Scroll.current - scene3Smoothed.current) * (1 - Math.exp(-delta * 4));
+    scene3Smoothed.current += (scene3ScrollRef.current - scene3Smoothed.current) * (1 - Math.exp(-delta * 4));
     scene3SmoothedRef.current = scene3Smoothed.current;
     const ease = scene3Smoothed.current * scene3Smoothed.current * (3 - 2 * scene3Smoothed.current);
     camera.position.lerpVectors(S3_A_POS, S3_B_POS, ease);
@@ -736,9 +724,14 @@ function FadeController({
 
 // ─── Temporary: show live camera position so we can hardcode it ──────
 // ─── Scene 2: reset camera to overview on mount ──────────────────────
-function Scene2Setup({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRefObject<number> }) {
+function Scene2Setup({
+  scene2SmoothedRef,
+  scene2ScrollRef,
+}: {
+  scene2SmoothedRef: React.MutableRefObject<number>;
+  scene2ScrollRef: React.MutableRefObject<number>;
+}) {
   const { camera, scene } = useThree();
-  const scene2Scroll = useRef(0);
   const scene2Smoothed = useRef(0);
 
   const basePos = useRef(new THREE.Vector3());
@@ -761,38 +754,6 @@ function Scene2Setup({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRe
     initialized.current = true;
   }, [camera]);
 
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (transitionState.phase !== "idle") return;
-
-      // Use a slower multiplier once the camera enters Phase 3 (scroll ≥ 0.90)
-      const scrollSpeed = scene2Scroll.current >= PHASE3_START ? 0.00005 : 0.0004;
-      if (e.deltaY > 0) {
-        if (scene2Scroll.current >= 1) {
-          // Already at end — scroll down triggers transition to Scene 3
-          transitionState.phase = "out";
-          transitionState.progress = 0;
-          transitionState.targetScene = 3;
-        } else {
-          scene2Scroll.current = Math.min(scene2Scroll.current + e.deltaY * scrollSpeed, 1);
-        }
-      } else if (e.deltaY < 0) {
-        // Scroll up: decrease Scene 2 scroll progress
-        if (scene2Scroll.current > 0) {
-          scene2Scroll.current = Math.max(scene2Scroll.current + e.deltaY * scrollSpeed, 0);
-        } else {
-          // If already at 0, transition back to Scene 1
-          transitionState.phase = "out";
-          transitionState.progress = 0;
-          transitionState.targetScene = 1;
-        }
-      }
-    };
-
-    window.addEventListener("wheel", handleWheel);
-    return () => window.removeEventListener("wheel", handleWheel);
-  }, []);
-
   useFrame((_, delta) => {
     if (!initialized.current) return;
 
@@ -811,7 +772,7 @@ function Scene2Setup({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRe
       }
     }
 
-    scene2Smoothed.current += (scene2Scroll.current - scene2Smoothed.current) * (1 - Math.exp(-delta * 4));
+    scene2Smoothed.current += (scene2ScrollRef.current - scene2Smoothed.current) * (1 - Math.exp(-delta * 4));
     scene2SmoothedRef.current = scene2Smoothed.current;
     const t = scene2Smoothed.current;
 
@@ -870,7 +831,7 @@ function Scene2Setup({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRe
 
     const sideDrift = rightVec.current.clone().multiplyScalar(-LATERAL_DRIFT_AMOUNT);
     const EXTRA_PARALLEL = 0.75; // extended parallel distance (Phase 2)
-    const EXTRA_DOLLY    = 0.9;  // Phase 3 dolly distance along facing direction
+    const EXTRA_DOLLY    = 0.55;  // Phase 3 dolly distance along facing direction
 
     // Anchor: end of Phase 2 parallel (= Phase 3 start)
     const parallelEndFwdOffset = forwardVec.current.clone().multiplyScalar((1.0 + EXTRA_PARALLEL) * moveDist.current);
@@ -920,7 +881,7 @@ function Scene2Setup({ scene2SmoothedRef }: { scene2SmoothedRef: React.MutableRe
 
     } else {
       // Phase 3 — translate horizontally in the direction the camera is facing (no zoom)
-      const DOLLY_START = 0.94;
+      const DOLLY_START = PHASE3_START;
       const pct = t > DOLLY_START ? ss((t - DOLLY_START) / (1.0 - DOLLY_START)) : 0;
       // Use only the horizontal (XZ) component of the facing direction so height stays locked
       const phase3MoveDir = new THREE.Vector3(phase3Dir.x, 0, phase3Dir.z).normalize();
@@ -940,146 +901,255 @@ export default function ModelViewer() {
   const [activeScene, setActiveScene] = useState<1 | 2 | 3>(1);
   const [freeCam3, setFreeCam3] = useState(false);
   const scrollRef = useRef(0);
+  const scene2ScrollRef = useRef(0);
+  const scene3ScrollRef = useRef(0);
   const scene2SmoothedRef = useRef(0);
   const scene3SmoothedRef = useRef(0);
   const progressRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const camPosSpan = useRef<HTMLSpanElement>(null);
   const camTargetSpan = useRef<HTMLSpanElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
 
   const handleSwitch = useCallback((target: 1 | 2 | 3) => {
     setActiveScene(target);
-    if (target === 2 || target === 3) {
-      scrollRef.current = 0;
-      if (progressRef.current) progressRef.current.style.width = "0%";
-    } else {
-      scrollRef.current = 0.94; // Land back in Scene 1 in zoomed-in state
-      if (progressRef.current) progressRef.current.style.width = `${0.94 * 100}%`;
+    const lenis = lenisRef.current;
+    if (lenis) {
+      const maxScroll = lenis.limit;
+      if (target === 1) {
+        lenis.scrollTo(0.32 * maxScroll, { immediate: true });
+        scrollRef.current = 0.97;
+        if (progressRef.current) progressRef.current.style.width = "97%";
+      } else if (target === 2) {
+        if (activeScene === 1) {
+          lenis.scrollTo(0.33 * maxScroll, { immediate: true });
+          scene2ScrollRef.current = 0;
+        } else {
+          lenis.scrollTo(0.65 * maxScroll, { immediate: true });
+          scene2ScrollRef.current = 0.97;
+        }
+      } else if (target === 3) {
+        lenis.scrollTo(0.66 * maxScroll, { immediate: true });
+        scene3ScrollRef.current = 0;
+      }
     }
     // start fade-in after a short delay to let scene mount
     setTimeout(() => {
       transitionState.phase = "in";
       transitionState.progress = 1;
     }, 50);
+  }, [activeScene]);
+
+  useEffect(() => {
+    // 1. Initialize Lenis on the window
+    const lenis = new Lenis({
+      duration: 2.2, // longer easing duration for buttery slow scroll
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // ultra smooth easing
+      gestureOrientation: "vertical",
+      wheelMultiplier: 0.28, // capped speed to ensure even max-power scroll only covers half of scene 1
+      touchMultiplier: 0.8,
+    });
+    lenisRef.current = lenis;
+
+    // Scroll back to top on refresh
+    window.scrollTo(0, 0);
+
+    // 2. Ticker inside requestAnimationFrame
+    let rafId: number;
+    let isStopped = false;
+    function raf(time: number) {
+      const targetStopped = transitionState.phase !== "idle";
+      if (targetStopped !== isStopped) {
+        isStopped = targetStopped;
+        if (isStopped) lenis.stop();
+        else lenis.start();
+      }
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    }
+    rafId = requestAnimationFrame(raf);
+
+    return () => {
+      lenis.destroy();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   useEffect(() => {
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
+    const lenis = lenisRef.current;
+    if (!lenis) return;
 
-      if (transitionState.phase !== "idle") return; // Block input during active transitions
+    const handleScroll = (e: any) => {
+      if (transitionState.phase !== "idle") {
+        lenis.stop();
+        return;
+      }
+
+      const progress = e.progress; // 0 to 1
+      const maxScroll = lenis.limit;
 
       if (activeScene === 1) {
-        scrollRef.current = Math.min(Math.max(scrollRef.current + e.deltaY * 0.001, 0), 1);
-        if (progressRef.current) progressRef.current.style.width = `${scrollRef.current * 100}%`;
-
-        if (scrollRef.current >= 0.97) {
+        // Scene 1: range [0.00, 0.33]
+        if (progress >= 0.33) {
+          lenis.stop();
           transitionState.phase = "out";
           transitionState.progress = 0;
           transitionState.targetScene = 2;
+        } else {
+          const local = Math.min(Math.max(progress / 0.33, 0), 1);
+          scrollRef.current = local;
+          if (progressRef.current) {
+            progressRef.current.style.width = `${local * 100}%`;
+          }
+        }
+      } else if (activeScene === 2) {
+        // Scene 2: range [0.33, 0.66]
+        if (progress >= 0.66) {
+          lenis.stop();
+          transitionState.phase = "out";
+          transitionState.progress = 0;
+          transitionState.targetScene = 3;
+        } else if (progress <= 0.28) {
+          lenis.stop();
+          transitionState.phase = "out";
+          transitionState.progress = 0;
+          transitionState.targetScene = 1;
+        } else {
+          const local = Math.min(Math.max((progress - 0.33) / 0.33, 0), 1);
+          scene2ScrollRef.current = local;
+        }
+      } else if (activeScene === 3) {
+        // Scene 3: range [0.66, 1.00]
+        if (progress <= 0.61) {
+          lenis.stop();
+          transitionState.phase = "out";
+          transitionState.progress = 0;
+          transitionState.targetScene = 2;
+        } else {
+          const local = Math.min(Math.max((progress - 0.66) / 0.34, 0), 1);
+          scene3ScrollRef.current = local;
         }
       }
     };
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => window.removeEventListener("wheel", onWheel);
+
+    lenis.on("scroll", handleScroll);
+    return () => {
+      lenis.off("scroll", handleScroll);
+    };
   }, [activeScene]);
 
   return (
-    <div style={{ width: "100vw", height: "100vh", position: "relative", overflow: "hidden" }}>
-      <Canvas
-        shadows
-        camera={{ position: [-6, 4, 3], fov: 50 }}
-        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.8, outputColorSpace: THREE.SRGBColorSpace }}
-      >
-        <color attach="background" args={["#1a1a1a"]} />
-        <ambientLight intensity={activeScene === 2 ? 0.6 : activeScene === 3 ? 0.5 : 0.4} />
-        <directionalLight position={[5, 8, 5]} intensity={activeScene === 2 ? 2.0 : activeScene === 3 ? 1.8 : 1.5}
-          castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} />
-        <directionalLight position={[-5, 4, -5]} intensity={activeScene === 2 ? 0.8 : activeScene === 3 ? 0.6 : 0.4} />
-        {(activeScene === 2 || activeScene === 3) && <directionalLight position={[0, 10, 0]} intensity={0.6} />}
-
-        <Suspense fallback={null}>
-          {activeScene === 1 ? <Scene1Model /> : activeScene === 2 ? <Scene2Model /> : <Scene3Model />}
-        </Suspense>
-
-        {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
-        {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} />}
-        {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
-
-        {activeScene === 1 && (
-          <ScrollCamera
-            scrollRef={scrollRef}
-          />
-        )}
-        {activeScene === 2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} />}
-        {activeScene === 3 && !freeCam3 && <Scene3Camera scene3SmoothedRef={scene3SmoothedRef} />}
-        {activeScene === 3 && !freeCam3 && <Scene3ModelAnimation scene3SmoothedRef={scene3SmoothedRef} />}
-        {activeScene === 3 && freeCam3 && <Scene3FreeCam posRef={camPosSpan} targetRef={camTargetSpan} />}
-
-        <FadeController overlayRef={overlayRef} onSwitch={handleSwitch} />
-      </Canvas>
-
-      {/* Full-screen black fade overlay */}
-      <div ref={overlayRef} style={{
-        position: "absolute", inset: 0,
-        background: "#000", opacity: 0, pointerEvents: "none",
-        transition: "none",
-      }} />
-
-      {/* Scene 3 camera controls + live position HUD */}
-      {activeScene === 3 && (
-        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", zIndex: 10 }}>
-          <button
-            onClick={() => setFreeCam3(f => !f)}
-            style={{
-              background: freeCam3 ? "#b08ac8" : "rgba(0,0,0,0.55)",
-              color: "#fff",
-              border: `1px solid ${freeCam3 ? "#b08ac8" : "rgba(255,255,255,0.18)"}`,
-              borderRadius: 4,
-              padding: "5px 14px",
-              fontFamily: "system-ui, sans-serif",
-              fontSize: 11,
-              letterSpacing: "0.12em",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
+    <div style={{ width: "100%", position: "relative" }}>
+      {/* Fixed container for background canvas and UI overlays */}
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        width: "100vw",
+        height: "100vh",
+        zIndex: 1,
+        pointerEvents: "none"
+      }}>
+        {/* Set pointerEvents auto so Canvas controls and DOM overlays are clickable */}
+        <div style={{ width: "100%", height: "100%", position: "relative", pointerEvents: "auto" }}>
+          <Canvas
+            shadows
+            camera={{ position: [-6, 4, 3], fov: 50 }}
+            gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.8, outputColorSpace: THREE.SRGBColorSpace }}
           >
-            {freeCam3 ? "STORY CAM" : "FREE CAM"}
-          </button>
-          {freeCam3 && (
-            <div style={{
-              background: "rgba(0,0,0,0.72)",
-              color: "#e0e0e0",
-              fontFamily: "monospace",
-              fontSize: 11,
-              padding: "10px 14px",
-              borderRadius: 4,
-              border: "1px solid rgba(255,255,255,0.1)",
-              lineHeight: 2,
-              minWidth: 270,
-            }}>
-              <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 4 }}>CAMERA POSITION</div>
-              <div>pos &nbsp;&nbsp;: <span ref={camPosSpan} style={{ color: "#f5c842" }} /></div>
-              <div>target: <span ref={camTargetSpan} style={{ color: "#4ab0d9" }} /></div>
+            <color attach="background" args={["#1a1a1a"]} />
+            <ambientLight intensity={activeScene === 2 ? 0.6 : activeScene === 3 ? 0.5 : 0.4} />
+            <directionalLight position={[5, 8, 5]} intensity={activeScene === 2 ? 2.0 : activeScene === 3 ? 1.8 : 1.5}
+              castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} />
+            <directionalLight position={[-5, 4, -5]} intensity={activeScene === 2 ? 0.8 : activeScene === 3 ? 0.6 : 0.4} />
+            {(activeScene === 2 || activeScene === 3) && <directionalLight position={[0, 10, 0]} intensity={0.6} />}
+
+            <Suspense fallback={null}>
+              {activeScene === 1 ? <Scene1Model /> : activeScene === 2 ? <Scene2Model /> : <Scene3Model />}
+            </Suspense>
+
+            {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
+            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} />}
+            {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
+
+            {activeScene === 1 && (
+              <ScrollCamera
+                scrollRef={scrollRef}
+              />
+            )}
+            {activeScene === 2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} />}
+            {activeScene === 3 && !freeCam3 && <Scene3Camera scene3SmoothedRef={scene3SmoothedRef} scene3ScrollRef={scene3ScrollRef} />}
+            {activeScene === 3 && !freeCam3 && <Scene3ModelAnimation scene3SmoothedRef={scene3SmoothedRef} />}
+            {activeScene === 3 && freeCam3 && <Scene3FreeCam posRef={camPosSpan} targetRef={camTargetSpan} />}
+
+            <FadeController overlayRef={overlayRef} onSwitch={handleSwitch} />
+          </Canvas>
+
+          {/* Full-screen black fade overlay */}
+          <div ref={overlayRef} style={{
+            position: "absolute", inset: 0,
+            background: "#000", opacity: 0, pointerEvents: "none",
+            transition: "none",
+          }} />
+
+          {/* Scene 3 camera controls + live position HUD */}
+          {activeScene === 3 && (
+            <div style={{ position: "absolute", top: 14, right: 14, display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", zIndex: 10 }}>
+              <button
+                onClick={() => setFreeCam3(f => !f)}
+                style={{
+                  background: freeCam3 ? "#b08ac8" : "rgba(0,0,0,0.55)",
+                  color: "#fff",
+                  border: `1px solid ${freeCam3 ? "#b08ac8" : "rgba(255,255,255,0.18)"}`,
+                  borderRadius: 4,
+                  padding: "5px 14px",
+                  fontFamily: "system-ui, sans-serif",
+                  fontSize: 11,
+                  letterSpacing: "0.12em",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+              >
+                {freeCam3 ? "STORY CAM" : "FREE CAM"}
+              </button>
+              {freeCam3 && (
+                <div style={{
+                  background: "rgba(0,0,0,0.72)",
+                  color: "#e0e0e0",
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  padding: "10px 14px",
+                  borderRadius: 4,
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  lineHeight: 2,
+                  minWidth: 270,
+                }}>
+                  <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 9, letterSpacing: "0.14em", marginBottom: 4 }}>CAMERA POSITION</div>
+                  <div>pos &nbsp;&nbsp;: <span ref={camPosSpan} style={{ color: "#f5c842" }} /></div>
+                  <div>target: <span ref={camTargetSpan} style={{ color: "#4ab0d9" }} /></div>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Progress bar (scene 1 only) */}
-      {activeScene === 1 && (
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "rgba(255,255,255,0.08)", pointerEvents: "none" }}>
-          <div ref={progressRef} style={{ height: "100%", width: "0%", background: "#b08ac8" }} />
-        </div>
-      )}
+          {/* Progress bar (scene 1 only) */}
+          {activeScene === 1 && (
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "rgba(255,255,255,0.08)", pointerEvents: "none" }}>
+              <div ref={progressRef} style={{ height: "100%", width: "0%", background: "#b08ac8" }} />
+            </div>
+          )}
 
-      <div style={{
-        position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
-        color: "rgba(255,255,255,0.4)", fontFamily: "system-ui, sans-serif",
-        fontSize: 12, letterSpacing: "0.1em", pointerEvents: "none", userSelect: "none",
-      }}>
-        {activeScene === 1 ? "↕ SCROLL TO ZOOM" : activeScene === 2 ? "VIRYA WAREHOUSE — SCROLL TO EXPLORE" : "VIRYA SCENE 2 — SCROLL UP TO RETURN"}
+          <div style={{
+            position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
+            color: "rgba(255,255,255,0.4)", fontFamily: "system-ui, sans-serif",
+            fontSize: 12, letterSpacing: "0.1em", pointerEvents: "none", userSelect: "none",
+          }}>
+            {activeScene === 1 ? "↕ SCROLL TO ZOOM" : activeScene === 2 ? "VIRYA WAREHOUSE — SCROLL TO EXPLORE" : "VIRYA SCENE 2 — SCROLL UP TO RETURN"}
+          </div>
+        </div>
       </div>
+
+      {/* Invisible scrollable ghost spacer to define the page height */}
+      <div style={{ height: "1200vh", width: "100%", pointerEvents: "none" }} />
     </div>
   );
 }
