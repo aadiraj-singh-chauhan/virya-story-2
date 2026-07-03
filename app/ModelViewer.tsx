@@ -9,52 +9,52 @@ import Lenis from "lenis";
 
 // ─── Colours ────────────────────────────────────────────────────────
 const SCENE1_COLORS: Record<string, string> = {
-  B1: "#c8956c", B2: "#6c9eb0", B3: "#8fad76", B4: "#b08ac8",
-  B6: "#c8b46c", L11: "#c87a7a", Road: "#7a8a7a", Disc: "#8a9a8a",
+  B1: "#e8e5e1", B2: "#eaebec", B3: "#e6e9e5", B4: "#e9e7ec",
+  B6: "#ece9e3", L11: "#e3e3e5", Road: "#ceccc8", Disc: "#d4d4d2",
 };
 
 // Keys ordered most-specific first so startsWith matching doesn't short-circuit
 const SCENE3_COLORS: Record<string, string> = {
-  "manufacturing unit": "#c8956c",  // B1 silo (orange-brown)
-  "central office": "#8fad76",  // B3 office (green)
-  "dispatch zone": "#b08ac8",  // B4 dispatch (purple)
-  "heavy assembly": "#c8b46c",  // B6 heavy assembly (golden)
-  warehouse: "#6c9eb0",  // B2 warehouse (blue-grey)
-  "Material__1": "#7a8a7a",  // ground plane (grey)
-  trees2: "#2d6a2d",  // forest terrain (dark green) — before "trees"
-  trees: "#4a8a4a",  // individual tree instances (green)
-  Guideline: "#c8c860",  // guideline floor paths (yellow-green)
-  "Blk#2": "#16a085",  // AMR-50 body (teal) — before "Blk"
-  "White#2": "#f5c842",  // AMR-10 accent (yellow) — before "White"
-  "White#3": "#1abc9c",  // AMR-50 accent (teal) — before "White"
-  "grey#2": "#117a65",  // AMR-50 detail (dark teal) — before "grey"
-  Blk: "#2980b9",  // APT-20 body (blue)
-  White: "#4ab0d9",  // APT-20 accent (light blue)
-  Black: "#f39c12",  // AMR-10 body (orange)
-  grey: "#888888",  // AMR-10 detail (grey)
-  L11: "#c87a7a",  // L11 elements (red-pink)
-  amr10: "#8a9a8a",  // AMR-10 disc base (grey)
-  B1: "#c8956c",  // B1 building shell fallback (orange-brown)
+  "manufacturing unit": "#e8e5e1",
+  "central office": "#e6e9e5",
+  "dispatch zone": "#e9e7ec",
+  "heavy assembly": "#ece9e3",
+  warehouse: "#eaebec",
+  "Material__1": "#ceccc8",
+  trees2: "#d2d5ce",
+  trees: "#d8dbd4",
+  Guideline: "#c8c8c4",
+  "Blk#2": "#e0e4e4",
+  "White#2": "#efefef",
+  "White#3": "#e8ecec",
+  "grey#2": "#d4d8d8",
+  Blk: "#e1e1e5",
+  White: "#efefef",
+  Black: "#efefef",
+  grey: "#d8d8d8",
+  L11: "#e3e3e5",
+  amr10: "#d4d4d2",
+  B1: "#e8e5e1",
 };
 
 // Keys must be ordered most-specific first (startsWith matching)
 const SCENE2_COLORS: Record<string, string> = {
-  seng: "#6c9eb0",         // shelf structure
-  kardus: "#c8956c",       // cardboard boxes
-  catkuning: "#8a9a8a",    // floor paint
-  kayubox: "#a07840",      // wooden crate
-  besilis: "#8fad76",      // shelf panel
-  DefaultLayer: "#b08ac8", // pallet station
-  HITAMDOP: "#3a3a4a",     // loading dock
-  Cube: "#b0a898",         // warehouse shell (walls / floor / ceiling)
-  "Blk#2": "#16a085",      // AMR-50 body — before "Blk"
-  "White#2": "#f5c842",    // AMR-10 accent — before "White"
-  "White#3": "#1abc9c",    // AMR-50 accent — before "White"
-  "grey#2": "#117a65",     // AMR-50 detail — before "grey"
-  Blk: "#2980b9",          // APT-20 body
-  Black: "#f39c12",        // AMR-10 body
-  White: "#4ab0d9",        // APT-20 accent
-  grey: "#888888",         // AMR-10 detail
+  seng: "#e5e8ec",
+  kardus: "#ede8e4",
+  catkuning: "#d8d8d4",
+  kayubox: "#e2deda",
+  besilis: "#e5e9e4",
+  DefaultLayer: "#e2deea",
+  HITAMDOP: "#cacac8",
+  Cube: "#f0f0f0",
+  "Blk#2": "#e0e4e4",
+  "White#2": "#efefef",
+  "White#3": "#e8ecec",
+  "grey#2": "#d4d8d8",
+  Blk: "#e1e1e5",
+  Black: "#efefef",
+  White: "#efefef",
+  grey: "#d8d8d8",
 };
 
 
@@ -66,6 +66,17 @@ function resolveColor(name: string, map: Record<string, string>): string | null 
 }
 
 // ─── Models ─────────────────────────────────────────────────────────
+const ANAGLYPH_VERT = `
+  uniform float uOffset;
+  void main() {
+    vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    clip.x += uOffset * clip.w;
+    gl_Position = clip;
+  }
+`;
+const ANAGLYPH_FRAG_RED  = `void main() { gl_FragColor = vec4(0.82, 0.08, 0.08, 0.10); }`;
+const ANAGLYPH_FRAG_CYAN = `void main() { gl_FragColor = vec4(0.04, 0.72, 0.86, 0.10); }`;
+
 function buildScene(scene: THREE.Group, colors: Record<string, string>) {
   scene.traverse((child: any) => {
     if (child.isLight) { child.intensity = 0; child.visible = false; }
@@ -75,12 +86,21 @@ function buildScene(scene: THREE.Group, colors: Record<string, string>) {
       const name: string = child.name || child.parent?.name || "";
       const color = resolveColor(name, colors) ?? resolveColor(child.parent?.name ?? "", colors);
       child.material = new THREE.MeshStandardMaterial({
-        color: color ?? "#cccccc", roughness: 0.8, metalness: 0.05,
+        color: color ?? "#f0f0f0", roughness: 0.88, metalness: 0.0,
       });
-      child.add(new THREE.LineSegments(
-        new THREE.EdgesGeometry(child.geometry, 20),
-        new THREE.LineBasicMaterial({ color: "#1a1a1a", transparent: true, opacity: 0.4 })
-      ));
+      const edgeGeo = new THREE.EdgesGeometry(child.geometry, 20);
+      child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
+        uniforms: { uOffset: { value: -0.0014 } },
+        vertexShader: ANAGLYPH_VERT,
+        fragmentShader: ANAGLYPH_FRAG_RED,
+        transparent: true, depthWrite: false,
+      })));
+      child.add(new THREE.LineSegments(edgeGeo, new THREE.ShaderMaterial({
+        uniforms: { uOffset: { value:  0.0014 } },
+        vertexShader: ANAGLYPH_VERT,
+        fragmentShader: ANAGLYPH_FRAG_CYAN,
+        transparent: true, depthWrite: false,
+      })));
     }
   });
   return scene;
@@ -252,10 +272,10 @@ function Scene2Animation({ scene2SmoothedRef }: { scene2SmoothedRef: React.Mutab
 // ─── AMR-10 (yellow) animation ───────────────────────────────────────
 const AMR10_TRIGGER = 0.40; // starts earlier than the APT-20 animation
 
-function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
+function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, onAmr10DoneRef }: {
   scene2SmoothedRef: React.MutableRefObject<number>;
   amr10DoneRef: React.MutableRefObject<boolean>;
-  pendingScene3Ref: React.MutableRefObject<boolean>;
+  onAmr10DoneRef: React.MutableRefObject<() => void>;
 }) {
   const { scene } = useThree();
   const discovered = useRef(false);
@@ -274,6 +294,8 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
     discovered.current = false;
     doneFired.current = false;
     parts.current = [];
+    amr10State.stopScrollAt = Infinity;
+    amr10State.holdUntil = 0;
     return () => {
       parts.current.forEach(({ obj, initLocalPos, initLocalRotZ }) => {
         obj.position.copy(initLocalPos);
@@ -283,17 +305,8 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
   }, [scene]);
 
   useFrame(() => {
-    const t = scene2SmoothedRef.current;
-    if (t < AMR10_TRIGGER) {
-      if (discovered.current) {
-        parts.current.forEach(({ obj, initLocalPos, initLocalRotZ }) => {
-          obj.position.copy(initLocalPos);
-          obj.rotation.z = initLocalRotZ;
-        });
-      }
-      return;
-    }
-
+    // Compute bounds on the first frame (before any scroll trigger) so
+    // amr10State.stopScrollAt is ready even when the user fast-scrolls.
     if (!boundsComputed.current) {
       const box = new THREE.Box3();
       let meshCount = 0;
@@ -305,7 +318,21 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
         box.getSize(size);
         moveDist.current = size.z * 0.45;
         boundsComputed.current = true;
+        // Pre-compute and store the scroll value at which the yellow robot stops
+        const cs = moveDist.current / 0.67;
+        amr10State.stopScrollAt = 0.40 + (2.7 / (cs * 1.43)) + (0.7 / (cs * 2.70)) + 0.015 + (2.0 / (cs * 7.00));
       }
+    }
+
+    const t = scene2SmoothedRef.current;
+    if (t < AMR10_TRIGGER) {
+      if (discovered.current) {
+        parts.current.forEach(({ obj, initLocalPos, initLocalRotZ }) => {
+          obj.position.copy(initLocalPos);
+          obj.rotation.z = initLocalRotZ;
+        });
+      }
+      return;
     }
 
     if (!discovered.current) {
@@ -366,7 +393,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
     const duration2 = 0.7 / robotSpeedAfter;
     const T2_END = T_HOLD_END + duration2;
     const T_ROT_END = T2_END + 0.015;
-    const duration3 = 2.0 / robotSpeedX;
+    const duration3 = 1.5 / robotSpeedX;
     const T_X_END = T_ROT_END + duration3;
 
     // Compute Z travel distance
@@ -436,12 +463,7 @@ function AMR10Animation({ scene2SmoothedRef, amr10DoneRef, pendingScene3Ref }: {
     if (!doneFired.current && t >= T_X_END) {
       doneFired.current = true;
       amr10DoneRef.current = true;
-      if (pendingScene3Ref.current) {
-        pendingScene3Ref.current = false;
-        transitionState.phase = "out";
-        transitionState.progress = 0;
-        transitionState.targetScene = 3;
-      }
+      onAmr10DoneRef.current(); // triggers the mandatory 100ms hold
     }
   });
 
@@ -705,6 +727,12 @@ const transitionState = {
   targetScene: null as 1 | 2 | 3 | null,
 };
 
+// Shared state for the mandatory AMR-10 camera hold
+const amr10State = {
+  stopScrollAt: Infinity, // scene2Smoothed value where the yellow robot finishes
+  holdUntil: 0,           // timestamp — camera is locked until this passes
+};
+
 function FadeController({
   overlayRef,
   onSwitch,
@@ -744,18 +772,21 @@ function FadeController({
 function Scene2Setup({
   scene2SmoothedRef,
   scene2ScrollRef,
+  amr10DoneRef,
 }: {
   scene2SmoothedRef: React.MutableRefObject<number>;
   scene2ScrollRef: React.MutableRefObject<number>;
+  amr10DoneRef: React.MutableRefObject<boolean>;
 }) {
   const { camera, scene } = useThree();
-  const scene2Smoothed = useRef(0);
+  const scene2Smoothed = useRef(scene2SmoothedRef.current);
 
   const basePos = useRef(new THREE.Vector3());
   const baseLook = useRef(new THREE.Vector3());
   const rightVec = useRef(new THREE.Vector3());
   const forwardVec = useRef(new THREE.Vector3());
   const initialized = useRef(false);
+  scene2Smoothed.current = scene2SmoothedRef.current;
   const moveDist = useRef(10.0);
   const modelXSize = useRef(10.0);
   const boundsComputed = useRef(false);
@@ -790,6 +821,14 @@ function Scene2Setup({
     }
 
     scene2Smoothed.current += (scene2ScrollRef.current - scene2Smoothed.current) * (1 - Math.exp(-delta * 4));
+
+    // Hard-clamp the camera at the yellow robot's stopping point until it finishes
+    // AND for 100ms after (the mandatory hold). This is the authoritative lock —
+    // no matter how fast the user scrolls, the camera cannot pass this position.
+    if (amr10State.stopScrollAt < Infinity && (!amr10DoneRef.current || Date.now() < amr10State.holdUntil)) {
+      scene2Smoothed.current = Math.min(scene2Smoothed.current, amr10State.stopScrollAt);
+    }
+
     scene2SmoothedRef.current = scene2Smoothed.current;
     const t = scene2Smoothed.current;
 
@@ -930,6 +969,34 @@ export default function ModelViewer() {
   const lenisRef = useRef<Lenis | null>(null);
   const amr10DoneRef = useRef(false);
   const pendingScene3Ref = useRef(false);
+  const pendingAmr10UnlockRef = useRef(false);
+  const onAmr10DoneRef = useRef(() => { });
+
+  // Rebuild the callback every render so it always closes over the latest refs.
+  onAmr10DoneRef.current = () => {
+    const hadPendingScene3 = pendingScene3Ref.current;
+    pendingScene3Ref.current = false;
+    // Lock camera for 100ms
+    amr10State.holdUntil = Date.now() + 100;
+    pendingAmr10UnlockRef.current = true; // RAF loop will keep Lenis stopped
+    lenisRef.current?.stop();             // stop immediately too
+    scene2ScrollRef.current = amr10State.stopScrollAt; // freeze scroll target
+    setTimeout(() => {
+      pendingAmr10UnlockRef.current = false; // RAF loop restarts Lenis on next tick
+      if (hadPendingScene3) {
+        transitionState.phase = "out";
+        transitionState.progress = 0;
+        transitionState.targetScene = 3;
+      } else {
+        // Snap Lenis back to the stop position so user scrolls forward from there
+        const lenis = lenisRef.current;
+        if (lenis && amr10State.stopScrollAt < Infinity) {
+          const tp = 0.33 + amr10State.stopScrollAt * 0.33;
+          lenis.scrollTo(tp * lenis.limit, { immediate: true });
+        }
+      }
+    }, 100);
+  };
 
   const handleSwitch = useCallback((target: 1 | 2 | 3) => {
     setActiveScene(target);
@@ -941,14 +1008,22 @@ export default function ModelViewer() {
         scrollRef.current = 0.97;
         if (progressRef.current) progressRef.current.style.width = "97%";
       } else if (target === 2) {
-        amr10DoneRef.current = false;
-        pendingScene3Ref.current = false;
         if (activeScene === 1) {
+          amr10DoneRef.current = false;
+          pendingScene3Ref.current = false;
+          pendingAmr10UnlockRef.current = false;
+          amr10State.stopScrollAt = Infinity; // will be recomputed by AMR10Animation
+          amr10State.holdUntil = 0;
           lenis.scrollTo(0.33 * maxScroll, { immediate: true });
           scene2ScrollRef.current = 0;
         } else {
-          lenis.scrollTo(0.65 * maxScroll, { immediate: true });
-          scene2ScrollRef.current = 0.97;
+          // Returning from Scene 3: restore Scene 2 at its completed Phase 3 state.
+          amr10DoneRef.current = true;
+          pendingScene3Ref.current = false;
+          scene2ScrollRef.current = 1.0;
+          scene2SmoothedRef.current = 1.0;
+          lenis.scrollTo(0.66 * maxScroll - 1, { immediate: true });
+          // scene2ScrollRef.current is set to 1.0 to ensure final state
         }
       } else if (target === 3) {
         lenis.scrollTo(0.66 * maxScroll, { immediate: true });
@@ -980,7 +1055,7 @@ export default function ModelViewer() {
     let rafId: number;
     let isStopped = false;
     function raf(time: number) {
-      const targetStopped = transitionState.phase !== "idle";
+      const targetStopped = transitionState.phase !== "idle" || pendingAmr10UnlockRef.current;
       if (targetStopped !== isStopped) {
         isStopped = targetStopped;
         if (isStopped) lenis.stop();
@@ -1042,19 +1117,20 @@ export default function ModelViewer() {
           transitionState.progress = 0;
           transitionState.targetScene = 1;
         } else {
-          const local = Math.min(Math.max((progress - 0.33) / 0.33, 0), 1);
-          scene2ScrollRef.current = local;
+          const rawLocal = Math.min(Math.max((progress - 0.33) / 0.33, 0), 1);
+          scene2ScrollRef.current = rawLocal;
         }
       } else if (activeScene === 3) {
         // Scene 3: range [0.66, 1.00]
+
+        const local = Math.min(Math.max((progress - 0.66) / 0.34, 0), 1);
+        scene3ScrollRef.current = local;
+
         if (progress <= 0.61) {
           lenis.stop();
           transitionState.phase = "out";
           transitionState.progress = 0;
           transitionState.targetScene = 2;
-        } else {
-          const local = Math.min(Math.max((progress - 0.66) / 0.34, 0), 1);
-          scene3ScrollRef.current = local;
         }
       }
     };
@@ -1081,29 +1157,31 @@ export default function ModelViewer() {
           <Canvas
             shadows
             camera={{ position: [-6, 4, 3], fov: 50 }}
-            gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.8, outputColorSpace: THREE.SRGBColorSpace }}
+            gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.4, outputColorSpace: THREE.SRGBColorSpace }}
           >
-            <color attach="background" args={["#1a1a1a"]} />
-            <ambientLight intensity={activeScene === 2 ? 0.6 : activeScene === 3 ? 0.5 : 0.4} />
-            <directionalLight position={[5, 8, 5]} intensity={activeScene === 2 ? 2.0 : activeScene === 3 ? 1.8 : 1.5}
+            <color attach="background" args={["#f0ede8"]} />
+            <ambientLight intensity={activeScene === 2 ? 1.6 : activeScene === 3 ? 1.5 : 1.4} />
+            <directionalLight position={[5, 8, 5]} intensity={activeScene === 2 ? 0.9 : activeScene === 3 ? 0.8 : 0.7}
               castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} />
-            <directionalLight position={[-5, 4, -5]} intensity={activeScene === 2 ? 0.8 : activeScene === 3 ? 0.6 : 0.4} />
-            {(activeScene === 2 || activeScene === 3) && <directionalLight position={[0, 10, 0]} intensity={0.6} />}
+            <directionalLight position={[-5, 4, -5]} intensity={activeScene === 2 ? 0.5 : activeScene === 3 ? 0.4 : 0.3} />
+            {(activeScene === 2 || activeScene === 3) && <directionalLight position={[0, 10, 0]} intensity={0.3} />}
 
             <Suspense fallback={null}>
-              {activeScene === 1 ? <Scene1Model /> : activeScene === 2 ? <Scene2Model /> : <Scene3Model />}
+              {activeScene === 1 && <Scene1Model />}
+              {(activeScene === 2 || activeScene === 3) && <Scene2Model />}
+              {activeScene === 3 && <Scene3Model />}
             </Suspense>
 
-            {activeScene === 2 && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
-            {activeScene === 2 && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} pendingScene3Ref={pendingScene3Ref} />}
-            {activeScene === 2 && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
+            {(activeScene === 2 || activeScene === 3) && <Scene2Animation scene2SmoothedRef={scene2SmoothedRef} />}
+            {(activeScene === 2 || activeScene === 3) && <AMR10Animation scene2SmoothedRef={scene2SmoothedRef} amr10DoneRef={amr10DoneRef} onAmr10DoneRef={onAmr10DoneRef} />}
+            {(activeScene === 2 || activeScene === 3) && <APT20PickupAnimation scene2SmoothedRef={scene2SmoothedRef} />}
 
             {activeScene === 1 && (
               <ScrollCamera
                 scrollRef={scrollRef}
               />
             )}
-            {activeScene === 2 && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} />}
+            {(activeScene === 2 || activeScene === 3) && <Scene2Setup scene2SmoothedRef={scene2SmoothedRef} scene2ScrollRef={scene2ScrollRef} amr10DoneRef={amr10DoneRef} />}
             {activeScene === 3 && !freeCam3 && <Scene3Camera scene3SmoothedRef={scene3SmoothedRef} scene3ScrollRef={scene3ScrollRef} />}
             {activeScene === 3 && !freeCam3 && <Scene3ModelAnimation scene3SmoothedRef={scene3SmoothedRef} />}
             {activeScene === 3 && freeCam3 && <Scene3FreeCam posRef={camPosSpan} targetRef={camTargetSpan} />}
