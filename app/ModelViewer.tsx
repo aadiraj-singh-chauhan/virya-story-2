@@ -863,7 +863,10 @@ function Scene2Setup({
 
     // Capped height rise and dynamic left focus parameters
     const HEIGHT_RISE = 0.1;       // maximum camera height rise
+    const INITIAL_HEIGHT_RISE = 0.05; // gentler rise during the first diagonal phase
     const LATERAL_DRIFT_AMOUNT = 1.5; // maximum diagonal lateral drift to the left
+    const INITIAL_DRIFT_RELIEF = 0.5; // reduce left travel during the first diagonal phase
+    const TURN_DRIFT_RELIEF = 0.4; // further reduce left drift while the camera turns
     const EXTRA_LEFT_SHIFT = 9.0;  // maximum leftward pan/focus shift at peak height
 
     // Timeline phases within Phase 1:
@@ -894,11 +897,29 @@ function Scene2Setup({
 
     // 1. Calculate height rise offset based on scroll progress
     const heightPct = Math.min(t / T_HEIGHT_DRIFT_END, 1.0);
-    const currentHeightOffset = heightPct * HEIGHT_RISE;
+    let currentHeightOffset = heightPct * INITIAL_HEIGHT_RISE;
+    if (t > T_HEIGHT_DRIFT_END) {
+      const riseBlend = ss(Math.min(
+        (t - T_HEIGHT_DRIFT_END) / (T_PAN_END - T_HEIGHT_DRIFT_END),
+        1
+      ));
+      currentHeightOffset = THREE.MathUtils.lerp(INITIAL_HEIGHT_RISE, HEIGHT_RISE, riseBlend);
+    }
 
     // 2. Calculate diagonal sideways drift offset based on scroll progress
     const driftPct = Math.min(t / T_HEIGHT_DRIFT_END, 1.0);
-    const currentSidewaysDrift = rightVec.current.clone().multiplyScalar(-driftPct * LATERAL_DRIFT_AMOUNT);
+    let driftRelief = ss(driftPct) * INITIAL_DRIFT_RELIEF;
+    if (t > T_PAN_START && t < T_PAN_END) {
+      const turnPct = (t - T_PAN_START) / (T_PAN_END - T_PAN_START);
+      const initialRelief = (1 - ss(turnPct)) * INITIAL_DRIFT_RELIEF;
+      const turnRelief = Math.sin(turnPct * Math.PI) ** 2 * TURN_DRIFT_RELIEF;
+      driftRelief = initialRelief + turnRelief;
+    } else if (t >= T_PAN_END) {
+      driftRelief = 0;
+    }
+    const currentSidewaysDrift = rightVec.current.clone().multiplyScalar(
+      -driftPct * LATERAL_DRIFT_AMOUNT + driftRelief
+    );
 
     // 3. Calculate left focus shift (angle panning) starting after height/drift are complete
     let panPct = 0;
